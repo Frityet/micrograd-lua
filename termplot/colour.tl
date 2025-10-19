@@ -83,6 +83,13 @@ function colour.colourmap_colour(name: colour.ColourMap, t: number): colour.Colo
     return (t < m[1][1]) and m[1][2] or m[#m][2]
 end
 
+function colour.random(): colour.Colour
+    local r = math.random(0, 255)
+    local g = math.random(0, 255)
+    local b = math.random(0, 255)
+    return { r, g, b }
+end
+
 colour.SERIES_PALETTE = {
   { 239, 71, 111 },  { 17, 138, 178 }, { 6, 214, 160 }, { 255, 209, 102 }, { 7, 59, 76 },
   { 255, 146, 54 },  { 147, 51, 234 }, { 5, 150, 105 }, { 245, 158, 11 },  { 220, 38, 38 },

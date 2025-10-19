@@ -10,5 +10,5 @@ c.label = 'c'
 print(c:tree())
 print(c)
 
-utilities.render_graphviz(c:graphviz(), "out.png")
+utilities.graph.dot(c:graphviz(), "out.png")
 

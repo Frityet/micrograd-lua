@@ -18,10 +18,10 @@ local record Figure
     x_label: string
     y_label: string
 
-    xmin: number | nil
-    xmax: number | nil
-    ymin: number | nil
-    ymax: number | nil
+    x_min: number | nil
+    x_max: number | nil
+    y_min: number | nil
+    y_max: number | nil
 
     interface Series where self.kind
         enum Kind
@@ -132,6 +132,10 @@ function Figure:create(opts: Figure): Figure
         colour_map = opts.colour_map or "viridis",
         background_colour = opts.background_colour or nil, -- not painting background; terminals are faster without
         domain = opts.domain or "numeric",
+        x_min = opts.x_min,
+        x_max = opts.x_max,
+        y_min = opts.y_min,
+        y_max = opts.y_max,
     }, self as metatable<self>)
 end
 
@@ -249,8 +253,8 @@ function Figure:heatmap(Z: {{number}}, opts?: Figure.options.Options): self
     return self
 end
 
-function Figure:set_xlimit(a: integer, b: integer): self self.xmin, self.xmax = a, b; return self end
-function Figure:set_ylimit(a: integer, b: integer): self self.ymin, self.ymax = a, b; return self end
+function Figure:set_xlimit(a: integer, b: integer): self self.x_min, self.x_max = a, b; return self end
+function Figure:set_ylimit(a: integer, b: integer): self self.y_min, self.y_max = a, b; return self end
 
 local function series_bounds(series: {Figure.Series}): (number, number, number, number)
   local xmin, xmax = math.huge, -math.huge
@@ -331,7 +335,14 @@ function Figure:render(): string
     local plot_ch = math.max(6,  self.height)
 
     -- Axis ranges
-    local xmin, xmax, ymin, ymax = self.xmin, self.xmax, self.ymin, self.ymax
+    local xmin_opt, xmax_opt = self.x_min, self.x_max
+    local ymin_opt, ymax_opt = self.y_min, self.y_max
+    local xmin_fixed = xmin_opt ~= nil
+    local xmax_fixed = xmax_opt ~= nil
+    local ymin_fixed = ymin_opt ~= nil
+    local ymax_fixed = ymax_opt ~= nil
+
+    local xmin, xmax, ymin, ymax = xmin_opt, xmax_opt, ymin_opt, ymax_opt
     if not xmin or not xmax or not ymin or not ymax then
         local axmin, axmax, aymin, aymax = series_bounds(self.series)
         xmin = xmin or axmin
@@ -339,12 +350,47 @@ function Figure:render(): string
         ymin = ymin or aymin
         ymax = ymax or aymax
     end
+    xmin = xmin as number
+    xmax = xmax as number
+    ymin = ymin as number
+    ymax = ymax as number
 
     -- Ticks
     local xn = 6
     local yn = 5
-    local x_ticks: {number} = (self.domain == "categorical") and {} or utilities.ticks(xmin, xmax, xn)
-    local y_ticks: {number} = utilities.ticks(ymin, ymax, yn)
+    local function trim_ticks(ticks: {number}, minv: number, maxv: number, clamp_min: boolean, clamp_max: boolean): {number}
+        local res: {number} = {}
+        for _, v in ipairs(ticks) do
+            if (not clamp_min or v >= minv) and (not clamp_max or v <= maxv) then
+                res[#res+1] = v
+            end
+        end
+        if clamp_min then
+            while #res > 0 and res[1] < minv do table.remove(res, 1) end
+            if #res == 0 or res[1] > minv then
+                table.insert(res, 1, minv)
+            else
+                res[1] = minv
+            end
+        end
+        if clamp_max then
+            while #res > 0 and res[#res] > maxv do res[#res] = nil end
+            if #res == 0 or res[#res] < maxv then
+                res[#res+1] = maxv
+            else
+                res[#res] = maxv
+            end
+        end
+        return res
+    end
+
+    local x_ticks: {number}
+    if self.domain == "categorical" then
+        x_ticks = {}
+    else
+        x_ticks = trim_ticks(utilities.ticks(xmin, xmax, xn), xmin, xmax, xmin_fixed, xmax_fixed)
+    end
+    local y_ticks: {number} = trim_ticks(utilities.ticks(ymin, ymax, yn), ymin, ymax, ymin_fixed, ymax_fixed)
 
     -- Left margin to fit y labels
     local maxy = 0

@@ -66,7 +66,7 @@ function Path:extension(): string | nil
     local last = self[#self]
     local dot_idx = last:match(".*()%.") or 0
     if dot_idx > 0 then
-        return last:sub(dot_idx)
+        return last:sub(dot_idx+1)
     end
     return nil
 end

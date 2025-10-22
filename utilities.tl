@@ -78,14 +78,20 @@ function utilities.popen2(cmd: {string}): integer | nil, FILE | nil, FILE | nil,
     
 end
 
-function utilities.graph.dot(inp: string, format: string): string | nil, (string | nil)
-    local cmd = string.format("dot -T%s", format)
-    local f = assert(io.popen(cmd, "w"))
+function utilities.graph.dot(inp: string, out: Path): boolean, string, integer --: string | nil, (string | nil)
+    local cmd = string.format("dot -o%s -T%s", tostring(out), out:extension())
+    local f = io.popen(cmd, "w") |> assert
     f:write(inp)
-    f:close()
+    return f:close()
 end
 
-function utilities.graph.line(inp: string, out: FILE): boolean, (string | nil)
+local e = math.exp(1)
+function utilities.tanh(x: number): number
+    return (e^(2*x)-1)/(e^(2*x)+1)
+end
+
+function utilities.sigmoid(x: number): number
+    return 1/(e+e^-x)
 end
 
 return utilities

@@ -5,13 +5,13 @@ local record Value is {Value}
         "*"
         "/"
         "^"
-        "unm"
     end
 
     data: number
     operator: Operator | nil
     label: string | nil
     gradient: number
+    backprop: function(self)
     __index: self
     __name: string
 
@@ -22,17 +22,17 @@ local record Value is {Value}
     metamethod __pow: function(self, number | Value): Value
     metamethod __unm: function(self): Value
     metamethod __tostring: function(self): string
-
 end
 Value.__index = Value
 Value.__name = "Value"
 
-function Value:create(data: number, label?: string, children?: Value, op?: Value.Operator): Value
+function Value:create(data: number, label?: string, children?: Value, op?: Value.Operator, grad?: number): Value
     children = children or {};
     children.data = data
     children.label = label
     children.operator = op
-    children.gradient = 0
+    children.gradient = grad or 0
+    children.backprop = function() end
     return setmetatable(children, self as metatable<Value>)
 end
 
@@ -40,27 +40,57 @@ local function get_num(v: number | Value): number return v is number and v or v.
 local function get_val(v: number | Value): Value return v is number and Value:create(v) or v as Value end
 
 function Value:__add(other: number | Value): Value
-    return Value:create(self.data + get_num(other), nil, { self, get_val(other) }, '+')
+    local other: Value = other is number and Value:create(other) or other as Value
+    local n = Value:create(self.data + other.data, nil, { self, other }, '+')
+    function n.backprop(n: Value)
+        self.gradient = 1 * n.gradient
+        other.gradient = 1 * n.gradient
+    end
+    return n
 end
 
 function Value:__sub(other: number | Value): Value
-    return Value:create(self.data - get_num(other), nil, { self, get_val(other) }, '-')
+    local other: Value = other is number and Value:create(other) or other as Value
+    local n = Value:create(self.data - other.data, nil, { self, other }, '-')
+    function n.backprop(n: Value)
+        self.gradient = 1 * n.gradient
+        other.gradient = 1 * n.gradient
+    end
+    return n
 end
 
 function Value:__mul(other: number | Value): Value
-    return Value:create(self.data * get_num(other), nil, { self, get_val(other) }, '*')
+    local other: Value = other is number and Value:create(other) or other as Value
+    local n = Value:create(self.data * other.data, nil, { self, other }, '*')
+    function n.backprop(n: Value)
+        self.gradient = other.data * n.gradient
+        other.gradient = self.data * n.gradient
+    end
+    return n
 end
 
 function Value:__div(other: number | Value): Value
-    return Value:create(self.data / get_num(other), nil, { self, get_val(other) }, '/')
+    local other: Value = other is number and Value:create(other) or other as Value
+    local n = Value:create(self.data / other.data, nil, { self, other }, '/')
+    function n.backprop(n: Value)
+        self.gradient = (1/other.data) * n.gradient
+        other.gradient = -self.data/(other.data^2) * n.gradient
+    end
+    return n
 end
 
 function Value:__pow(other: number | Value): Value
-    return Value:create(self.data ^ get_num(other), nil, { self, get_val(other) }, '^')
+    local other: Value = other is number and Value:create(other) or other as Value
+    local n = Value:create(self.data ^ other.data, nil, { self, other }, '^')
+    function n.backprop(n: Value)
+        self.gradient = (n.data * other.data/self.data) * n.gradient
+        other.gradient = (n.data * math.log(self.data)) * n.gradient
+    end
+    return n
 end
 
 function Value:__unm(): Value
-    return Value:create(-self.data, nil, { self }, 'unm')
+    return self * -1
 end
 
 function Value:__tostring(): string
@@ -71,19 +101,15 @@ function Value:__tostring(): string
     end
     s = s.." }"
 
-    return string.format("<%s: data=%.2f, gradient=%.2f operator=%s, %s>", self.__name, self.data, self.gradient, self.operator, s)
+    return string.format("<%s%s: data=%.2f, gradient=%.2f operator=%s, %s>", self.__name, self.label and " '"..self.label.."'" or "", self.data, self.gradient, self.operator, s)
 end
 
-function Value:tree(): string
+function Value:equation(): string
     local function fmt(n: number): string
         local s = string.format("%.6f", n)
         s = s:gsub("(%..-)0+$", "%1")
         s = s:gsub("%.$", "")
         return s
-    end
-
-    local function op_to_str(op: Value.Operator): string
-        return (op == "unm") and "-" or op
     end
 
     local function infix(v: Value): string
@@ -97,7 +123,32 @@ function Value:tree(): string
 
         local left = infix(v[1])
         local right = infix(v[2])
-        return "("..left.." "..op_to_str(v.operator).." "..right..")"
+        return "("..left.." "..tostring(v.operator).." "..right..")"
+    end
+
+    return infix(self)
+end
+
+function Value:tree(): string
+    local function fmt(n: number): string
+        local s = string.format("%.6f", n)
+        s = s:gsub("(%..-)0+$", "%1")
+        s = s:gsub("%.$", "")
+        return s
+    end
+
+    local function infix(v: Value): string
+        if v.operator == nil then
+            return v.label ~= nil and v.label or fmt(v.data)
+        end
+
+        if v.operator == "unm" then
+            return "-("..infix(v[1])..")"
+        end
+
+        local left = infix(v[1])
+        local right = infix(v[2])
+        return "("..left.." "..tostring(v.operator).." "..right..")"
     end
 
     local function node_label(v: Value, is_root: boolean): string
@@ -107,7 +158,7 @@ function Value:tree(): string
 
         local base: string
         if v.operator ~= nil then
-            base = op_to_str(v.operator).." = "..fmt(v.data)
+            base = tostring(v.operator).." = "..fmt(v.data)
         else
             base = fmt(v.data)
         end
@@ -140,10 +191,6 @@ function Value:graphviz(): string
         s = s:gsub("(%..-)0+$", "%1")
         s = s:gsub("%.$", "")
         return s
-    end
-
-    local function op_to_str(op: Value.Operator): string
-        return (op == "unm") and "-" or op
     end
 
     local function esc(s: string): string
@@ -202,7 +249,7 @@ function Value:graphviz(): string
     local function ensure_op_node(v: Value): string
         local opid = id_for(v) .. "_op"
         if not have_op_node[opid] then
-            local op = op_to_str((v.operator as Value.Operator))
+            local op = tostring((v.operator as Value.Operator))
             table.insert(lines, string.format('  %s [label="%s", shape=circle, width=0.35, height=0.35, fixedsize=true];', opid, esc(op)))
             have_op_node[opid] = true
         end
@@ -248,5 +295,19 @@ function Value:graphviz(): string
     return table.concat(lines, "\n")
 end
 
+function Value:clone(): Value
+    local kids: {Value} = {}
+    for _, v in ipairs(self) do kids[#kids+1] = v:clone() end
+
+    return Value:create(self.data, self.label, kids, self.operator, self.gradient)
+end
+
+function Value:fill_gradients()
+    self:backprop()
+
+    for _, v in ipairs(self) do
+        v:backprop()
+    end
+end
 
 return Value
